@@ -40,28 +40,35 @@ async def generate_dm_response(user_message: str) -> str:
         logger.warning("GEMINI_API_KEY não configurada. Usando resposta padrão.")
         return "Olá! Obrigado por entrar em contato com a SkyPaper. 📒✨ Em instantes nossa equipe vai te responder por aqui!"
 
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-        payload = {
-            "system_instruction": {
-                "parts": [{"text": SKYPAPER_SYSTEM_PROMPT}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": user_message}]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 300
+    model = GEMINI_MODEL or "gemini-3-flash-preview"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": SKYPAPER_SYSTEM_PROMPT}]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": user_message}]
             }
+        ],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 300
         }
-        async with httpx.AsyncClient(timeout=15.0) as client:
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=25.0) as client:
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
-        logger.error(f"Erro ao chamar Gemini API: {e}", exc_info=True)
-        return "Olá! Obrigado pelo contato com a SkyPaper! 📒✨ Nossa equipe humana logo vai dar continuidade ao seu atendimento por aqui."
+        logger.error(f"Erro ao chamar Gemini API ({model}): {e}", exc_info=True)
+        return (
+            "Olá! Que alegria ver seu contato com a SkyPaper! 📒✨\n\n"
+            "Se você quer revender nossos produtos ou ver o catálogo no atacado, "
+            "acesse: https://www.skypaperinc.com.br/representantes/\n\n"
+            "Em instantes nossa equipe também vai te responder por aqui! 💖"
+        )

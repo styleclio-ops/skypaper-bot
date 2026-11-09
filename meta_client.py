@@ -1,6 +1,6 @@
 import logging
 import httpx
-from config import META_GRAPH_URL, META_PAGE_ACCESS_TOKEN
+from config import META_GRAPH_URL, META_PAGE_ACCESS_TOKEN, INSTAGRAM_ACCOUNT_ID
 
 logger = logging.getLogger("skypaper_bot")
 
@@ -10,7 +10,7 @@ async def send_dm(recipient_id: str, text: str) -> bool:
         logger.error("META_PAGE_ACCESS_TOKEN não configurado!")
         return False
 
-    url = f"{META_GRAPH_URL}/me/messages"
+    url = f"{META_GRAPH_URL}/{INSTAGRAM_ACCOUNT_ID}/messages"
     headers = {
         "Authorization": f"Bearer {META_PAGE_ACCESS_TOKEN}",
         "Content-Type": "application/json"
@@ -21,7 +21,7 @@ async def send_dm(recipient_id: str, text: str) -> bool:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(url, json=payload, headers=headers)
             if resp.status_code == 200:
                 logger.info(f"DM enviada com sucesso para {recipient_id}")
@@ -42,7 +42,7 @@ async def send_private_reply_to_comment(comment_id: str, text: str) -> bool:
         logger.error("META_PAGE_ACCESS_TOKEN não configurado!")
         return False
 
-    url = f"{META_GRAPH_URL}/me/messages"
+    url = f"{META_GRAPH_URL}/{INSTAGRAM_ACCOUNT_ID}/messages"
     headers = {
         "Authorization": f"Bearer {META_PAGE_ACCESS_TOKEN}",
         "Content-Type": "application/json"
@@ -53,7 +53,7 @@ async def send_private_reply_to_comment(comment_id: str, text: str) -> bool:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(url, json=payload, headers=headers)
             if resp.status_code == 200:
                 logger.info(f"DM privada enviada com sucesso para o comentário {comment_id}")
@@ -79,7 +79,7 @@ async def send_public_comment_reply(comment_id: str, text: str) -> bool:
     payload = {"message": text}
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(url, json=payload, headers=headers)
             if resp.status_code == 200:
                 logger.info(f"Resposta pública enviada com sucesso para comentário {comment_id}")

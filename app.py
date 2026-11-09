@@ -53,7 +53,7 @@ async def root():
     return {
         "status": "online",
         "service": "SkyPaper Instagram AI Bot (Tsuru)",
-        "version": "2.2.0"
+        "version": "2.3.0"
     }
 
 @app.get("/webhook")
@@ -136,11 +136,10 @@ async def process_instagram_event(payload: dict):
 
                     if payload_data == "PERFIL_CONSUMIDOR" or "consumidor" in button_title.lower():
                         consumidor_reply = (
-                            "Que maravilha! 💖 A SkyPaper atende papelarias e lojas de todo o país, "
-                            "mas você também encontra nossos produtos nas principais papelarias físicas e lojas parceiras online (como Mercado Livre e Shopee).\n\n"
-                            "Qual produto ou linha você está procurando no momento? "
-                            "(Ex: Rebecca Bonbon, Luluca, Linha Capivara, Linha Fofa, One Piece, Cadernos, etc.) "
-                            "Me conta aqui que te envio o link certinho do nosso site! 🌸📒"
+                            "Que maravilha! 💖 Conheça todo o nosso catálogo e produtos no site oficial da SkyPaper:\n"
+                            "👉 https://skypaperinc.com.br/produtos/\n\n"
+                            "Você também encontra nossos produtos nas melhores papelarias físicas do Brasil e em lojas parceiras online. "
+                            "Se tiver qualquer dúvida ou procurar um item específico, é só me chamar aqui! 🌸📒"
                         )
                         memory.add_message(sender_id, "user", "Sou Consumidor Final")
                         memory.add_message(sender_id, "model", consumidor_reply)
@@ -177,11 +176,10 @@ async def process_instagram_event(payload: dict):
 
                 if qr_payload == "PERFIL_CONSUMIDOR":
                     consumidor_reply = (
-                        "Que maravilha! 💖 A SkyPaper atende papelarias e lojas de todo o país, "
-                        "mas você também encontra nossos produtos nas principais papelarias físicas e lojas parceiras online (como Mercado Livre e Shopee).\n\n"
-                        "Qual produto ou linha você está procurando no momento? "
-                        "(Ex: Rebecca Bonbon, Luluca, Linha Capivara, Linha Fofa, One Piece, Cadernos, etc.) "
-                        "Me conta aqui que te envio o link certinho do nosso site! 🌸📒"
+                        "Que maravilha! 💖 Conheça todo o nosso catálogo e produtos no site oficial da SkyPaper:\n"
+                        "👉 https://skypaperinc.com.br/produtos/\n\n"
+                        "Você também encontra nossos produtos nas melhores papelarias físicas do Brasil e em lojas parceiras online. "
+                        "Se tiver qualquer dúvida ou procurar um item específico, é só me chamar aqui! 🌸📒"
                     )
                     memory.add_message(sender_id, "user", "Sou Consumidor Final")
                     memory.add_message(sender_id, "model", consumidor_reply)
@@ -198,11 +196,10 @@ async def process_instagram_event(payload: dict):
                 # Se o usuário digitou uma das opções do menu por texto
                 if any(k in normalized_text for k in ["consumidor final", "sou consumidor", "sou consumidora", "consumidor", "cliente", "b2c"]) or normalized_text in ["3", "3️⃣"]:
                     consumidor_reply = (
-                        "Que maravilha! 💖 A SkyPaper atende papelarias e lojas de todo o país, "
-                        "mas você também encontra nossos produtos nas principais papelarias físicas e lojas parceiras online (como Mercado Livre e Shopee).\n\n"
-                        "Qual produto ou linha você está procurando no momento? "
-                        "(Ex: Rebecca Bonbon, Luluca, Linha Capivara, Linha Fofa, One Piece, Cadernos, etc.) "
-                        "Me conta aqui que te envio o link certinho do nosso site! 🌸📒"
+                        "Que maravilha! 💖 Conheça todo o nosso catálogo e produtos no site oficial da SkyPaper:\n"
+                        "👉 https://skypaperinc.com.br/produtos/\n\n"
+                        "Você também encontra nossos produtos nas melhores papelarias físicas do Brasil e em lojas parceiras online. "
+                        "Se tiver qualquer dúvida ou procurar um item específico, é só me chamar aqui! 🌸📒"
                     )
                     memory.add_message(sender_id, "user", message_text)
                     memory.add_message(sender_id, "model", consumidor_reply)

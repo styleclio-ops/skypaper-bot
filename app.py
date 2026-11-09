@@ -18,22 +18,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger("skypaper_bot")
 
-app = FastAPI(title="SkyPaper Instagram AI Bot")
+app = FastAPI(title="SkyPaper Instagram AI Bot (Tsuru)")
 
-# Variações de resposta pública nos comentários para evitar bloqueio anti-spam da Meta
+# 12 Variações oficiais de respostas públicas aos comentários
 PUBLIC_REPLY_TEMPLATES = [
-    "Te mandei uma mensagem no direct com todas as informações! Dá uma olhadinha 📩✨",
-    "Prontinho! Acabei de te enviar no direct 📒💖",
-    "Informações enviadas por mensagem privada! Confere lá seu direct 🥰",
-    "Já te respondi no direct! Qualquer dúvida nos chame por lá 📝✨"
+    "Te chamei no direct para te passar todos os detalhes! Dá uma olhadinha lá 📩✨",
+    "Prontinho! Acabei de te enviar uma mensagem no direct 📒💖",
+    "Informações enviadas por direct! Confere lá na sua DM! 🥰",
+    "Já te respondi no direct! Qualquer dúvida nos chame por lá 📝✨",
+    "Opa, acabei de te mandar uma DM! Dá uma conferida 🚀",
+    "Que legal seu comentário! Te enviei um direct agora mesmo 💛",
+    "Dá uma olhadinha no seu direct, já mandei tudo certinho por lá! 📬✨",
+    "Acabei de te responder por DM! Confere lá no seu direct 💌",
+    "Mensagem enviada com sucesso no seu direct! Corre lá pra ver 📒✨",
+    "Prontinho, te chamei no direct com todas as informações! Dá uma olhada 💬💖",
+    "Te respondi por DM Qualquer coisa estamos à disposição por lá 🌸📝",
+    "Acabei de te mandar uma DM com tudo o que você precisa! Confere lá ✨"
 ]
+
+# Mensagem privada enviada ao usuário no Direct após ele comentar em um post/Reel
+COMMENT_OPENING_DM = (
+    "Olá! Vi que você comentou no nosso post da SkyPaper! 📒✨\n\n"
+    "Para conseguir te atender melhor, me informe o que você é:\n\n"
+    "1️⃣ Lojista\n"
+    "2️⃣ Representante\n"
+    "3️⃣ Consumidor Final"
+)
 
 @app.get("/")
 async def root():
     return {
         "status": "online",
-        "service": "SkyPaper Instagram AI Bot",
-        "version": "1.0.0"
+        "service": "SkyPaper Instagram AI Bot (Tsuru)",
+        "version": "2.0.0"
     }
 
 @app.get("/webhook")
@@ -44,7 +61,7 @@ async def verify_webhook(
     hub_challenge: str = Query(None, alias="hub.challenge")
 ):
     """
-    Endpoint de verificação exigido pela Meta ao cadastrar a URL de retorno (Callback URL).
+    Endpoint de verificação exigido pela Meta ao cadastrar a URL de retorno.
     """
     logger.info(f"Recebendo verificação do webhook: mode={hub_mode}, token={hub_verify_token}")
     if hub_mode == "subscribe" and hub_verify_token == META_VERIFY_TOKEN:
@@ -57,7 +74,7 @@ async def verify_webhook(
 
 async def process_instagram_event(payload: dict):
     """
-    Processa eventos em background para responder ao Webhook da Meta em menos de 3 segundos (requisito da API).
+    Processa eventos em background para responder ao Webhook da Meta em menos de 2 segundos.
     """
     try:
         entries = payload.get("entry", [])
@@ -73,44 +90,36 @@ async def process_instagram_event(payload: dict):
                     user_id = from_user.get("id")
 
                     # Ignora comentários da própria conta
-                    if user_id and INSTAGRAM_ACCOUNT_ID and user_id == INSTAGRAM_ACCOUNT_ID:
+                    if user_id and INSTAGRAM_ACCOUNT_ID and str(user_id) == str(INSTAGRAM_ACCOUNT_ID):
                         continue
 
                     logger.info(f"Novo comentário recebido em post/reel: '{comment_text}' (ID: {comment_id})")
-
-                    # Mensagem privada que será enviada no Direct de quem comentou
-                    dm_text = (
-                        "Olá! Vi que você comentou no nosso post da SkyPaper! 📒✨\n\n"
-                        "Se você é lojista e deseja revender ou ver o catálogo no atacado, "
-                        "acesse nossa área de representantes: https://www.skypaperinc.com.br/representantes/\n\n"
-                        "Para conhecer toda nossa linha ou tirar dúvidas, pode me responder por aqui! 💖"
-                    )
 
                     public_reply = random.choice(PUBLIC_REPLY_TEMPLATES)
 
                     # Dispara a DM privada e a resposta pública em paralelo para ser ultrarrápido
                     await asyncio.gather(
-                        send_private_reply_to_comment(comment_id, dm_text),
+                        send_private_reply_to_comment(comment_id, COMMENT_OPENING_DM),
                         send_public_comment_reply(comment_id, public_reply),
                         return_exceptions=True
                     )
 
-            # 2. TRATAMENTO DE DIRECT MESSAGES (DMs) COM O AGENTE DE IA
+            # 2. TRATAMENTO DE DIRECT MESSAGES (DMs) COM O AGENTE TSURU E MEMÓRIA
             messaging_events = entry.get("messaging", [])
             for messaging in messaging_events:
-                sender_id = messaging.get("sender", {}).get("id")
+                sender_id = str(messaging.get("sender", {}).get("id"))
                 message = messaging.get("message", {})
                 message_text = message.get("text", "")
                 is_echo = message.get("is_echo", False)
 
                 # Ignora mensagens enviadas por nós mesmos ou eventos de eco
-                if is_echo or (sender_id and INSTAGRAM_ACCOUNT_ID and sender_id == INSTAGRAM_ACCOUNT_ID):
+                if is_echo or (sender_id and INSTAGRAM_ACCOUNT_ID and sender_id == str(INSTAGRAM_ACCOUNT_ID)):
                     continue
 
                 if message_text:
                     logger.info(f"Nova DM recebida de {sender_id}: '{message_text}'")
-                    # Chama o cérebro da IA (Gemini) com o contexto da Skypaper
-                    ai_reply = await generate_dm_response(message_text)
+                    # Chama o cérebro da IA (Tsuru) com memória de conversa
+                    ai_reply = await generate_dm_response(sender_id, message_text)
                     # Envia a resposta de volta no Direct do Instagram
                     await send_dm(sender_id, ai_reply)
 

@@ -5,9 +5,10 @@ from fastapi import FastAPI, Request, Query, Response, BackgroundTasks
 from fastapi.responses import PlainTextResponse, JSONResponse
 
 from config import META_VERIFY_TOKEN, INSTAGRAM_ACCOUNT_ID
-from gemini_agent import generate_dm_response
+from gemini_agent import generate_dm_response, memory
 from meta_client import (
     send_dm,
+    send_button_menu,
     send_private_reply_to_comment,
     send_public_comment_reply
 )
@@ -36,13 +37,15 @@ PUBLIC_REPLY_TEMPLATES = [
     "Acabei de te mandar uma DM com tudo o que você precisa! Confere lá ✨"
 ]
 
-# Mensagem privada enviada ao usuário no Direct após ele comentar em um post/Reel
-COMMENT_OPENING_DM = (
+# Texto de abertura do menu enviado ao usuário no Direct
+COMMENT_MENU_TEXT = (
     "Olá! Vi que você comentou no nosso post da SkyPaper! 📒✨\n\n"
-    "Para conseguir te atender melhor, me informe o que você é:\n\n"
-    "1️⃣ Lojista\n"
-    "2️⃣ Representante\n"
-    "3️⃣ Consumidor Final"
+    "Para conseguir te atender melhor, me informe o que você é:"
+)
+
+DM_GREETING_MENU_TEXT = (
+    "Olá! Sou o Tsuru, assistente virtual da SkyPaper! 🕊️✨\n\n"
+    "Para conseguir te atender melhor, me informe o que você é:"
 )
 
 @app.get("/")
@@ -50,7 +53,7 @@ async def root():
     return {
         "status": "online",
         "service": "SkyPaper Instagram AI Bot (Tsuru)",
-        "version": "2.0.0"
+        "version": "2.1.0"
     }
 
 @app.get("/webhook")
@@ -74,7 +77,8 @@ async def verify_webhook(
 
 async def process_instagram_event(payload: dict):
     """
-    Processa eventos em background para responder ao Webhook da Meta em menos de 2 segundos.
+    Processa eventos em background para responder ao Webhook da Meta em tempo recorde (< 2s).
+    Trata comentários em posts/reels e conversas no Direct com botões clicáveis interativos.
     """
     try:
         entries = payload.get("entry", [])
@@ -97,31 +101,141 @@ async def process_instagram_event(payload: dict):
 
                     public_reply = random.choice(PUBLIC_REPLY_TEMPLATES)
 
-                    # Dispara a DM privada e a resposta pública em paralelo para ser ultrarrápido
+                    # Envia o menu com botões clicáveis no Direct e a resposta pública no post em paralelo
                     await asyncio.gather(
-                        send_private_reply_to_comment(comment_id, COMMENT_OPENING_DM),
+                        send_button_menu({"comment_id": comment_id}, text=COMMENT_MENU_TEXT),
                         send_public_comment_reply(comment_id, public_reply),
                         return_exceptions=True
                     )
 
-            # 2. TRATAMENTO DE DIRECT MESSAGES (DMs) COM O AGENTE TSURU E MEMÓRIA
+            # 2. TRATAMENTO DE DIRECT MESSAGES (DMs) E CLIQUES EM BOTÕES
             messaging_events = entry.get("messaging", [])
             for messaging in messaging_events:
                 sender_id = str(messaging.get("sender", {}).get("id"))
-                message = messaging.get("message", {})
-                message_text = message.get("text", "")
-                is_echo = message.get("is_echo", False)
+                is_echo = messaging.get("message", {}).get("is_echo", False)
 
                 # Ignora mensagens enviadas por nós mesmos ou eventos de eco
                 if is_echo or (sender_id and INSTAGRAM_ACCOUNT_ID and sender_id == str(INSTAGRAM_ACCOUNT_ID)):
                     continue
 
-                if message_text:
-                    logger.info(f"Nova DM recebida de {sender_id}: '{message_text}'")
-                    # Chama o cérebro da IA (Tsuru) com memória de conversa
-                    ai_reply = await generate_dm_response(sender_id, message_text)
-                    # Envia a resposta de volta no Direct do Instagram
-                    await send_dm(sender_id, ai_reply)
+                # --- 2.1 TRATAMENTO DE CLIQUES EM BOTÕES CLICÁVEIS (POSTBACK) ---
+                postback = messaging.get("postback")
+                if postback:
+                    payload_data = postback.get("payload", "")
+                    button_title = postback.get("title", "")
+                    logger.info(f"Clique em botão recebido de {sender_id}: payload='{payload_data}', title='{button_title}'")
+
+                    if payload_data == "PERFIL_CONSUMIDOR" or button_title == "Consumidor Final":
+                        consumidor_reply = (
+                            "Que maravilha! 💖 A SkyPaper atende papelarias e lojas de todo o país, "
+                            "mas você também encontra nossos produtos nas principais papelarias físicas e lojas parceiras online (como Mercado Livre e Shopee).\n\n"
+                            "Qual produto ou linha você está procurando no momento? "
+                            "(Ex: Rebecca Bonbon, Luluca, Linha Capivara, Linha Fofa, One Piece, Cadernos, etc.) "
+                            "Me conta aqui que te envio o link certinho do nosso site! 🌸📒"
+                        )
+                        memory.add_message(sender_id, "user", "Sou Consumidor Final")
+                        memory.add_message(sender_id, "model", consumidor_reply)
+                        await send_dm(sender_id, consumidor_reply)
+                        continue
+
+                    elif payload_data == "PERFIL_LOJISTA" or button_title == "Lojista":
+                        lojista_reply = (
+                            "Excelente! Se você é lojista ou quer revender os produtos da SkyPaper no atacado, "
+                            "acesse nosso portal exclusivo:\n"
+                            "👉 https://comprarskypaper.hidrahome.com.br/\n\n"
+                            "Cadastre-se na página para que a nossa equipe comercial entre em contato e passe todas as condições de compras! 📒✨"
+                        )
+                        memory.add_message(sender_id, "user", "Sou Lojista")
+                        memory.add_message(sender_id, "model", lojista_reply)
+                        await send_dm(sender_id, lojista_reply)
+                        continue
+
+                    elif payload_data == "PERFIL_REPRESENTANTE" or button_title == "Representante":
+                        rep_reply = (
+                            "Perfeito! Para representantes comerciais ou parceiros de vendas, acesse nossa área comercial:\n"
+                            "👉 https://comprarskypaper.hidrahome.com.br/\n\n"
+                            "Faça seu cadastro para que possamos alinhar a parceria e regiões de atendimento! 💼✨"
+                        )
+                        memory.add_message(sender_id, "user", "Sou Representante")
+                        memory.add_message(sender_id, "model", rep_reply)
+                        await send_dm(sender_id, rep_reply)
+                        continue
+
+                # --- 2.2 TRATAMENTO DE MENSAGENS DE TEXTO E QUICK REPLIES ---
+                message = messaging.get("message", {})
+                quick_reply = message.get("quick_reply", {})
+                qr_payload = quick_reply.get("payload", "")
+
+                if qr_payload == "PERFIL_CONSUMIDOR":
+                    consumidor_reply = (
+                        "Que maravilha! 💖 A SkyPaper atende papelarias e lojas de todo o país, "
+                        "mas você também encontra nossos produtos nas principais papelarias físicas e lojas parceiras online (como Mercado Livre e Shopee).\n\n"
+                        "Qual produto ou linha você está procurando no momento? "
+                        "(Ex: Rebecca Bonbon, Luluca, Linha Capivara, Linha Fofa, One Piece, Cadernos, etc.) "
+                        "Me conta aqui que te envio o link certinho do nosso site! 🌸📒"
+                    )
+                    memory.add_message(sender_id, "user", "Sou Consumidor Final")
+                    memory.add_message(sender_id, "model", consumidor_reply)
+                    await send_dm(sender_id, consumidor_reply)
+                    continue
+
+                message_text = message.get("text", "").strip()
+                if not message_text:
+                    continue
+
+                logger.info(f"Nova DM de texto recebida de {sender_id}: '{message_text}'")
+                normalized_text = message_text.lower().strip()
+
+                # Se o usuário digitou uma das opções do menu por texto
+                if normalized_text in ["3", "3️⃣", "consumidor final", "consumidor", "sou consumidor", "sou consumidora", "b2c", "cliente"]:
+                    consumidor_reply = (
+                        "Que maravilha! 💖 A SkyPaper atende papelarias e lojas de todo o país, "
+                        "mas você também encontra nossos produtos nas principais papelarias físicas e lojas parceiras online (como Mercado Livre e Shopee).\n\n"
+                        "Qual produto ou linha você está procurando no momento? "
+                        "(Ex: Rebecca Bonbon, Luluca, Linha Capivara, Linha Fofa, One Piece, Cadernos, etc.) "
+                        "Me conta aqui que te envio o link certinho do nosso site! 🌸📒"
+                    )
+                    memory.add_message(sender_id, "user", message_text)
+                    memory.add_message(sender_id, "model", consumidor_reply)
+                    await send_dm(sender_id, consumidor_reply)
+                    continue
+
+                elif normalized_text in ["1", "1️⃣", "lojista", "sou lojista", "revender", "quero revender", "atacado", "comprar no atacado"]:
+                    lojista_reply = (
+                        "Excelente! Se você é lojista ou quer revender os produtos da SkyPaper no atacado, "
+                        "acesse nosso portal exclusivo:\n"
+                        "👉 https://comprarskypaper.hidrahome.com.br/\n\n"
+                        "Cadastre-se na página para que a nossa equipe comercial entre em contato e passe todas as condições de compras! 📒✨"
+                    )
+                    memory.add_message(sender_id, "user", message_text)
+                    memory.add_message(sender_id, "model", lojista_reply)
+                    await send_dm(sender_id, lojista_reply)
+                    continue
+
+                elif normalized_text in ["2", "2️⃣", "representante", "sou representante", "representação", "representacao"]:
+                    rep_reply = (
+                        "Perfeito! Para representantes comerciais ou parceiros de vendas, acesse nossa área comercial:\n"
+                        "👉 https://comprarskypaper.hidrahome.com.br/\n\n"
+                        "Faça seu cadastro para que possamos alinhar a parceria e regiões de atendimento! 💼✨"
+                    )
+                    memory.add_message(sender_id, "user", message_text)
+                    memory.add_message(sender_id, "model", rep_reply)
+                    await send_dm(sender_id, rep_reply)
+                    continue
+
+                elif normalized_text in ["menu", "opções", "opcoes", "início", "inicio", "começar", "comecar", "ajuda"]:
+                    await send_button_menu({"id": sender_id}, text=DM_GREETING_MENU_TEXT)
+                    continue
+
+                # Se for saudação inicial sem histórico de conversa anterior, apresenta o menu de botões clicáveis
+                history = memory.get_history(sender_id)
+                if not history and normalized_text in ["oi", "ola", "olá", "bom dia", "boa tarde", "boa noite", "oii", "oiee", "hey", "hello"]:
+                    await send_button_menu({"id": sender_id}, text=DM_GREETING_MENU_TEXT)
+                    continue
+
+                # Chama o cérebro da IA (Tsuru) com memória de conversa e catálogo completo do site
+                ai_reply = await generate_dm_response(sender_id, message_text)
+                await send_dm(sender_id, ai_reply)
 
     except Exception as e:
         logger.error(f"Erro ao processar evento do Instagram: {e}", exc_info=True)

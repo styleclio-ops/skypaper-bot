@@ -41,7 +41,7 @@ async def send_button_menu(recipient: dict, text: str = None) -> bool:
     Botões configurados:
     1. Lojista -> https://comprarskypaper.hidrahome.com.br/
     2. Representante -> https://comprarskypaper.hidrahome.com.br/
-    3. Consumidor Final -> Postback 'PERFIL_CONSUMIDOR'
+    3. Consumidor Final -> https://skypaperinc.com.br/produtos/
     """
     if not META_PAGE_ACCESS_TOKEN:
         logger.error("META_PAGE_ACCESS_TOKEN não configurado!")
@@ -79,9 +79,9 @@ async def send_button_menu(recipient: dict, text: str = None) -> bool:
                             "title": "Representante"
                         },
                         {
-                            "type": "postback",
-                            "title": "Consumidor Final",
-                            "payload": "PERFIL_CONSUMIDOR"
+                            "type": "web_url",
+                            "url": "https://skypaperinc.com.br/produtos/",
+                            "title": "Consumidor Final"
                         }
                     ]
                 }
@@ -122,9 +122,9 @@ async def send_button_menu(recipient: dict, text: str = None) -> bool:
                                             "title": "Representante"
                                         },
                                         {
-                                            "type": "postback",
-                                            "title": "Consumidor Final",
-                                            "payload": "PERFIL_CONSUMIDOR"
+                                            "type": "web_url",
+                                            "url": "https://skypaperinc.com.br/produtos/",
+                                            "title": "Consumidor Final"
                                         }
                                     ]
                                 }
@@ -145,7 +145,7 @@ async def send_button_menu(recipient: dict, text: str = None) -> bool:
                 f"{menu_text}\n\n"
                 "👉 Lojista: https://comprarskypaper.hidrahome.com.br/\n"
                 "👉 Representante: https://comprarskypaper.hidrahome.com.br/\n"
-                "👉 Consumidor Final: Me informe qual produto você procura!"
+                "👉 Consumidor Final: https://skypaperinc.com.br/produtos/"
             )
             resp_txt = await client.post(url, json={"recipient": recipient, "message": {"text": fallback_text}}, headers=headers)
             return resp_txt.status_code == 200

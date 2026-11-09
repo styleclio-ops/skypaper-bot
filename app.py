@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import random
 from fastapi import FastAPI, Request, Query, Response, BackgroundTasks
@@ -85,12 +86,14 @@ async def process_instagram_event(payload: dict):
                         "Para conhecer toda nossa linha ou tirar dúvidas, pode me responder por aqui! 💖"
                     )
 
-                    # 1.1 Envia a DM privada para o autor do comentário
-                    await send_private_reply_to_comment(comment_id, dm_text)
-
-                    # 1.2 Envia uma resposta pública no comentário (alternando frases)
                     public_reply = random.choice(PUBLIC_REPLY_TEMPLATES)
-                    await send_public_comment_reply(comment_id, public_reply)
+
+                    # Dispara a DM privada e a resposta pública em paralelo para ser ultrarrápido
+                    await asyncio.gather(
+                        send_private_reply_to_comment(comment_id, dm_text),
+                        send_public_comment_reply(comment_id, public_reply),
+                        return_exceptions=True
+                    )
 
             # 2. TRATAMENTO DE DIRECT MESSAGES (DMs) COM O AGENTE DE IA
             messaging_events = entry.get("messaging", [])
@@ -122,8 +125,6 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     try:
         payload = await request.json()
-        logger.debug(f"Payload recebido da Meta: {payload}")
-        # Processa em background para liberar o webhook da Meta imediatamente com HTTP 200
         background_tasks.add_task(process_instagram_event, payload)
         return JSONResponse(content={"status": "EVENT_RECEIVED"}, status_code=200)
     except Exception as e:

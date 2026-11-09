@@ -1,0 +1,20 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Meta Graph API Settings
+META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "skypaper_verify_secret_123")
+META_PAGE_ACCESS_TOKEN = os.getenv("META_PAGE_ACCESS_TOKEN", "")
+META_GRAPH_API_VERSION = os.getenv("META_GRAPH_API_VERSION", "v21.0")
+META_GRAPH_URL = f"https://graph.facebook.com/{META_GRAPH_API_VERSION}"
+
+# Instagram Business Account ID (SkyPaper: 17841465176642948)
+INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID", "17841465176642948")
+
+# Google Gemini API
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+
+# Server Config
+PORT = int(os.getenv("PORT", "8000"))

@@ -53,7 +53,7 @@ async def root():
     return {
         "status": "online",
         "service": "SkyPaper Instagram AI Bot (Tsuru)",
-        "version": "2.1.0"
+        "version": "2.2.0"
     }
 
 @app.get("/webhook")
@@ -78,15 +78,17 @@ async def verify_webhook(
 async def process_instagram_event(payload: dict):
     """
     Processa eventos em background para responder ao Webhook da Meta em tempo recorde (< 2s).
-    Trata comentários em posts/reels e conversas no Direct com botões clicáveis interativos.
+    Trata comentários em posts/reels, cliques em botões interativos e mensagens diretas.
     """
     try:
+        logger.info(f"Payload do Webhook recebido: {payload}")
         entries = payload.get("entry", [])
         for entry in entries:
             # 1. TRATAMENTO DE COMENTÁRIOS EM TODOS OS POSTS E REELS
             changes = entry.get("changes", [])
             for change in changes:
-                if change.get("field") == "comments":
+                field = change.get("field")
+                if field == "comments":
                     value = change.get("value", {})
                     comment_id = value.get("id")
                     comment_text = value.get("text", "").strip()
@@ -98,7 +100,6 @@ async def process_instagram_event(payload: dict):
                         continue
 
                     logger.info(f"Novo comentário recebido em post/reel: '{comment_text}' (ID: {comment_id})")
-
                     public_reply = random.choice(PUBLIC_REPLY_TEMPLATES)
 
                     # Envia o menu com botões clicáveis no Direct e a resposta pública no post em paralelo
@@ -108,8 +109,16 @@ async def process_instagram_event(payload: dict):
                         return_exceptions=True
                     )
 
-            # 2. TRATAMENTO DE DIRECT MESSAGES (DMs) E CLIQUES EM BOTÕES
-            messaging_events = entry.get("messaging", [])
+            # 2. EXTRAÇÃO DE EVENTOS DE MENSAGENS E BOTÕES (messaging, standby e changes)
+            messaging_events = list(entry.get("messaging", [])) + list(entry.get("standby", []))
+            for change in changes:
+                if change.get("field") in ["messages", "messaging_postbacks"]:
+                    val = change.get("value", {})
+                    if isinstance(val, dict):
+                        messaging_events.append(val)
+                    elif isinstance(val, list):
+                        messaging_events.extend(val)
+
             for messaging in messaging_events:
                 sender_id = str(messaging.get("sender", {}).get("id"))
                 is_echo = messaging.get("message", {}).get("is_echo", False)
@@ -125,7 +134,7 @@ async def process_instagram_event(payload: dict):
                     button_title = postback.get("title", "")
                     logger.info(f"Clique em botão recebido de {sender_id}: payload='{payload_data}', title='{button_title}'")
 
-                    if payload_data == "PERFIL_CONSUMIDOR" or button_title == "Consumidor Final":
+                    if payload_data == "PERFIL_CONSUMIDOR" or "consumidor" in button_title.lower():
                         consumidor_reply = (
                             "Que maravilha! 💖 A SkyPaper atende papelarias e lojas de todo o país, "
                             "mas você também encontra nossos produtos nas principais papelarias físicas e lojas parceiras online (como Mercado Livre e Shopee).\n\n"
@@ -138,7 +147,7 @@ async def process_instagram_event(payload: dict):
                         await send_dm(sender_id, consumidor_reply)
                         continue
 
-                    elif payload_data == "PERFIL_LOJISTA" or button_title == "Lojista":
+                    elif payload_data == "PERFIL_LOJISTA" or "lojista" in button_title.lower():
                         lojista_reply = (
                             "Excelente! Se você é lojista ou quer revender os produtos da SkyPaper no atacado, "
                             "acesse nosso portal exclusivo:\n"
@@ -150,7 +159,7 @@ async def process_instagram_event(payload: dict):
                         await send_dm(sender_id, lojista_reply)
                         continue
 
-                    elif payload_data == "PERFIL_REPRESENTANTE" or button_title == "Representante":
+                    elif payload_data == "PERFIL_REPRESENTANTE" or "representante" in button_title.lower():
                         rep_reply = (
                             "Perfeito! Para representantes comerciais ou parceiros de vendas, acesse nossa área comercial:\n"
                             "👉 https://comprarskypaper.hidrahome.com.br/\n\n"
@@ -187,7 +196,7 @@ async def process_instagram_event(payload: dict):
                 normalized_text = message_text.lower().strip()
 
                 # Se o usuário digitou uma das opções do menu por texto
-                if normalized_text in ["3", "3️⃣", "consumidor final", "consumidor", "sou consumidor", "sou consumidora", "b2c", "cliente"]:
+                if any(k in normalized_text for k in ["consumidor final", "sou consumidor", "sou consumidora", "consumidor", "cliente", "b2c"]) or normalized_text in ["3", "3️⃣"]:
                     consumidor_reply = (
                         "Que maravilha! 💖 A SkyPaper atende papelarias e lojas de todo o país, "
                         "mas você também encontra nossos produtos nas principais papelarias físicas e lojas parceiras online (como Mercado Livre e Shopee).\n\n"
@@ -200,7 +209,7 @@ async def process_instagram_event(payload: dict):
                     await send_dm(sender_id, consumidor_reply)
                     continue
 
-                elif normalized_text in ["1", "1️⃣", "lojista", "sou lojista", "revender", "quero revender", "atacado", "comprar no atacado"]:
+                elif any(k in normalized_text for k in ["lojista", "sou lojista", "revender", "quero revender", "atacado", "comprar no atacado"]) or normalized_text in ["1", "1️⃣"]:
                     lojista_reply = (
                         "Excelente! Se você é lojista ou quer revender os produtos da SkyPaper no atacado, "
                         "acesse nosso portal exclusivo:\n"
@@ -212,7 +221,7 @@ async def process_instagram_event(payload: dict):
                     await send_dm(sender_id, lojista_reply)
                     continue
 
-                elif normalized_text in ["2", "2️⃣", "representante", "sou representante", "representação", "representacao"]:
+                elif any(k in normalized_text for k in ["representante", "sou representante", "representação", "representacao"]) or normalized_text in ["2", "2️⃣"]:
                     rep_reply = (
                         "Perfeito! Para representantes comerciais ou parceiros de vendas, acesse nossa área comercial:\n"
                         "👉 https://comprarskypaper.hidrahome.com.br/\n\n"

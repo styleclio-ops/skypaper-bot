@@ -5,7 +5,7 @@ from config import META_GRAPH_URL, META_PAGE_ACCESS_TOKEN, INSTAGRAM_ACCOUNT_ID
 logger = logging.getLogger("skypaper_bot")
 
 async def send_dm(recipient_id: str, text: str) -> bool:
-    """Envia uma mensagem direta (DM) para um usuário no Instagram."""
+    """Envia uma mensagem direta (DM) de texto para um usuário no Instagram."""
     if not META_PAGE_ACCESS_TOKEN:
         logger.error("META_PAGE_ACCESS_TOKEN não configurado!")
         return False
@@ -33,10 +33,15 @@ async def send_dm(recipient_id: str, text: str) -> bool:
         logger.error(f"Exceção ao enviar DM para {recipient_id}: {e}", exc_info=True)
         return False
 
-async def send_private_reply_to_comment(comment_id: str, text: str) -> bool:
+async def send_button_menu(recipient: dict, text: str = None) -> bool:
     """
-    Envia uma DM privada para o autor de um comentário em QUALQUER post ou Reel.
-    Usa o endpoint oficial da Meta Graph API com {"recipient": {"comment_id": comment_id}}.
+    Envia o menu de botões clicáveis no Instagram Direct (Button Template / Generic Template).
+    Compatível tanto com {"id": recipient_id} quanto com {"comment_id": comment_id}.
+    
+    Botões configurados:
+    1. Lojista -> https://comprarskypaper.hidrahome.com.br/
+    2. Representante -> https://comprarskypaper.hidrahome.com.br/
+    3. Consumidor Final -> Postback 'PERFIL_CONSUMIDOR'
     """
     if not META_PAGE_ACCESS_TOKEN:
         logger.error("META_PAGE_ACCESS_TOKEN não configurado!")
@@ -47,23 +52,111 @@ async def send_private_reply_to_comment(comment_id: str, text: str) -> bool:
         "Authorization": f"Bearer {META_PAGE_ACCESS_TOKEN}",
         "Content-Type": "application/json"
     }
-    payload = {
-        "recipient": {"comment_id": comment_id},
-        "message": {"text": text}
+
+    menu_text = text or (
+        "Olá! Vi que você comentou no nosso post da SkyPaper! 📒✨\n\n"
+        "Para conseguir te atender melhor, me informe o que você é:"
+    )
+
+    # Tentativa 1: Button Template (menu nativo de botões verticais idêntico ao modelo solicitado)
+    button_payload = {
+        "recipient": recipient,
+        "message": {
+            "attachment": {
+                "type": "template",
+                "payload": {
+                    "template_type": "button",
+                    "text": menu_text,
+                    "buttons": [
+                        {
+                            "type": "web_url",
+                            "url": "https://comprarskypaper.hidrahome.com.br/",
+                            "title": "Lojista"
+                        },
+                        {
+                            "type": "web_url",
+                            "url": "https://comprarskypaper.hidrahome.com.br/",
+                            "title": "Representante"
+                        },
+                        {
+                            "type": "postback",
+                            "title": "Consumidor Final",
+                            "payload": "PERFIL_CONSUMIDOR"
+                        }
+                    ]
+                }
+            }
+        }
     }
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
+            resp = await client.post(url, json=button_payload, headers=headers)
             if resp.status_code == 200:
-                logger.info(f"DM privada enviada com sucesso para o comentário {comment_id}")
+                logger.info(f"Menu de botões clicáveis enviado com sucesso (Button Template) para {recipient}")
                 return True
             else:
-                logger.error(f"Erro ao enviar DM privada para comentário: {resp.status_code} - {resp.text}")
-                return False
+                logger.warning(f"Button Template falhou ({resp.status_code}): {resp.text}. Tentando Generic Template...")
+
+            # Tentativa 2: Generic Template (alternativa padrão suportada pela Meta)
+            generic_payload = {
+                "recipient": recipient,
+                "message": {
+                    "attachment": {
+                        "type": "template",
+                        "payload": {
+                            "template_type": "generic",
+                            "elements": [
+                                {
+                                    "title": "SkyPaper | Atendimento 📒✨",
+                                    "subtitle": menu_text[:80],
+                                    "buttons": [
+                                        {
+                                            "type": "web_url",
+                                            "url": "https://comprarskypaper.hidrahome.com.br/",
+                                            "title": "Lojista"
+                                        },
+                                        {
+                                            "type": "web_url",
+                                            "url": "https://comprarskypaper.hidrahome.com.br/",
+                                            "title": "Representante"
+                                        },
+                                        {
+                                            "type": "postback",
+                                            "title": "Consumidor Final",
+                                            "payload": "PERFIL_CONSUMIDOR"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+            resp_gen = await client.post(url, json=generic_payload, headers=headers)
+            if resp_gen.status_code == 200:
+                logger.info(f"Menu de botões clicáveis enviado com sucesso (Generic Template) para {recipient}")
+                return True
+            else:
+                logger.warning(f"Generic Template falhou ({resp_gen.status_code}): {resp_gen.text}. Enviando fallback em texto...")
+
+            # Tentativa 3: Fallback em texto seguro caso o cliente do usuário não suporte templates
+            fallback_text = (
+                f"{menu_text}\n\n"
+                "👉 Lojista: https://comprarskypaper.hidrahome.com.br/\n"
+                "👉 Representante: https://comprarskypaper.hidrahome.com.br/\n"
+                "👉 Consumidor Final: Me informe qual produto você procura!"
+            )
+            resp_txt = await client.post(url, json={"recipient": recipient, "message": {"text": fallback_text}}, headers=headers)
+            return resp_txt.status_code == 200
+
     except Exception as e:
-        logger.error(f"Exceção ao enviar DM para comentário {comment_id}: {e}", exc_info=True)
+        logger.error(f"Exceção ao enviar menu de botões para {recipient}: {e}", exc_info=True)
         return False
+
+async def send_private_reply_to_comment(comment_id: str, text: str) -> bool:
+    """Envia uma DM privada padrão para o autor de um comentário em QUALQUER post ou Reel."""
+    return await send_button_menu({"comment_id": comment_id}, text=text)
 
 async def send_public_comment_reply(comment_id: str, text: str) -> bool:
     """

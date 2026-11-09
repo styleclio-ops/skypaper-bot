@@ -66,21 +66,23 @@ async def send_private_reply_to_comment(comment_id: str, text: str) -> bool:
         return False
 
 async def send_public_comment_reply(comment_id: str, text: str) -> bool:
-    """Responde publicamente ao comentário no post ou Reel."""
+    """
+    Responde publicamente ao comentário no post ou Reel.
+    A Meta exige form-data (data=...) ou query param em vez de JSON para evitar o erro 20 (OAuthException).
+    """
     if not META_PAGE_ACCESS_TOKEN:
         logger.error("META_PAGE_ACCESS_TOKEN não configurado!")
         return False
 
     url = f"{META_GRAPH_URL}/{comment_id}/replies"
     headers = {
-        "Authorization": f"Bearer {META_PAGE_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {META_PAGE_ACCESS_TOKEN}"
     }
-    payload = {"message": text}
+    data = {"message": text}
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, data=data, headers=headers)
             if resp.status_code == 200:
                 logger.info(f"Resposta pública enviada com sucesso para comentário {comment_id}")
                 return True

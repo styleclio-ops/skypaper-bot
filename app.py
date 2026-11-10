@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request, Query, Response, BackgroundTasks
 from fastapi.responses import PlainTextResponse, JSONResponse, HTMLResponse
 
 from config import META_VERIFY_TOKEN, INSTAGRAM_ACCOUNT_ID
-from gemini_agent import generate_dm_response, memory
+from gemini_agent import generate_dm_response, memory, understand_comment_context
 from meta_client import (
     send_dm,
     send_button_menu,
@@ -18,12 +18,15 @@ from meta_client import (
 from analytics import (
     record_interaction,
     record_product_search,
-    get_executive_summary
+    get_executive_summary,
+    add_pending_site_notification
 )
 from campaigns import (
     analyze_text,
     get_sac_comment_reply,
-    get_sac_dm_response
+    get_sac_dm_response,
+    is_no_invoice_mention,
+    get_no_invoice_reply
 )
 from contingency import (
     periodic_healthcheck_loop,
@@ -87,7 +90,7 @@ async def root():
     return {
         "status": "online",
         "service": "SkyPaper Instagram AI Bot (Tsuru)",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "features": [
             "Respostas automaticas a comentarios e DMs",
             "Menu interativo de botoes (Lojista, Representante, Consumidor)",
@@ -145,14 +148,52 @@ async def process_instagram_event(payload: dict):
 
                     logger.info(f"Novo comentário recebido: '{comment_text}' (ID: {comment_id})")
 
-                    # Análise de Inteligência (SAC, Campanha, Produtos)
+                    # Análise de Produtos
                     analysis = analyze_text(comment_text)
-
-                    # Registra menções de produtos
                     for prod in analysis.get("products", []):
                         record_product_search(user_id, prod)
 
-                    # CENÁRIO A: COMENTÁRIO COM RECLAMAÇÃO / SAC
+                    # 1. TENTA LEITURA CONTEXTUAL PROFUNDA VIA IA (GEMINI)
+                    ai_context = await understand_comment_context(comment_text)
+
+                    if ai_context:
+                        intent = ai_context.get("intent", "geral")
+                        is_sac = ai_context.get("is_sac", False)
+                        public_reply = ai_context.get("public_reply")
+                        dm_intro = ai_context.get("dm_intro")
+
+                        if is_sac:
+                            logger.warning(f"🚨 ALERTA SAC (detectado por IA no comentário {comment_id}): '{comment_text}'")
+                            record_interaction(
+                                user_id=user_id,
+                                event_type="comment",
+                                profile_type="sac",
+                                sentiment="negative",
+                                text_snippet=comment_text
+                            )
+                            await asyncio.gather(
+                                send_public_comment_reply(comment_id, public_reply or get_sac_comment_reply()),
+                                send_dm(user_id, dm_intro or get_sac_dm_response()),
+                                return_exceptions=True
+                            )
+                            continue
+                        else:
+                            logger.info(f"✨ Contexto do comentário compreendido por IA (intent: {intent})")
+                            record_interaction(
+                                user_id=user_id,
+                                event_type="comment",
+                                profile_type=intent,
+                                sentiment="positive" if intent == "elogio" else "neutral",
+                                text_snippet=comment_text
+                            )
+                            await asyncio.gather(
+                                send_public_comment_reply(comment_id, public_reply),
+                                send_button_menu({"comment_id": comment_id}, text=dm_intro),
+                                return_exceptions=True
+                            )
+                            continue
+
+                    # 2. FALLBACK SE A IA NÃO RESPONDER EM TEMPO HÁBIL
                     if analysis["is_sac"]:
                         logger.warning(f"🚨 ALERTA SAC detectado no comentário {comment_id}: '{comment_text}'")
                         record_interaction(
@@ -166,12 +207,11 @@ async def process_instagram_event(payload: dict):
                         dm_reply = get_sac_dm_response()
                         await asyncio.gather(
                             send_public_comment_reply(comment_id, public_reply),
-                            send_button_menu({"comment_id": comment_id}, text=dm_reply),
+                            send_dm(user_id, dm_reply),
                             return_exceptions=True
                         )
                         continue
 
-                    # CENÁRIO B: COMENTÁRIO DE CAMPANHA ESPECÍFICA (QUERO, CATALOGO, REVENDER, ETC.)
                     elif analysis["campaign_id"]:
                         camp_data = analysis["campaign_data"]
                         logger.info(f"🎯 Campanha detectada no comentário: '{analysis['campaign_id']}'")
@@ -190,7 +230,6 @@ async def process_instagram_event(payload: dict):
                         )
                         continue
 
-                    # CENÁRIO C: COMENTÁRIO PADRÃO (ROTAÇÃO DE RESPOSTAS E MENU 3 BOTÕES)
                     else:
                         record_interaction(
                             user_id=user_id,
@@ -307,9 +346,21 @@ async def process_instagram_event(payload: dict):
                 for prod in analysis.get("products", []):
                     record_product_search(sender_id, prod)
 
-                # CENÁRIO 1: RELATO DE ERRO NO SITE (PLANO DE CONTINGÊNCIA)
+                # CENÁRIO 0: CLIENTE INFORMA QUE NÃO POSSUI NOTA FISCAL
+                if is_no_invoice_mention(message_text):
+                    logger.info(f"Cliente {sender_id} informou ausência de nota fiscal.")
+                    record_interaction(sender_id, "dm", "sac", "neutral", text_snippet=message_text)
+                    no_inv_reply = get_no_invoice_reply()
+                    memory.add_message(sender_id, "user", message_text)
+                    memory.add_message(sender_id, "model", no_inv_reply)
+                    await send_dm(sender_id, no_inv_reply)
+                    continue
+
+                # CENÁRIO 1: RELATO DE ERRO NO SITE (CONTINGÊNCIA - NOTIFICAÇÃO AGENDADA QUANDO O SITE VOLTAR)
                 if analysis["is_contingency"]:
                     logger.warning(f"⚠️ Relato de contingência/erro de site por {sender_id}: '{message_text}'")
+                    # Registra cliente na fila para ser notificado assim que o site voltar!
+                    add_pending_site_notification(sender_id, "hidrahome_portal", "https://comprarskypaper.hidrahome.com.br/")
                     record_interaction(
                         user_id=sender_id,
                         event_type="dm",
@@ -332,6 +383,8 @@ async def process_instagram_event(payload: dict):
                         text_snippet=message_text
                     )
                     sac_msg = get_sac_dm_response()
+                    memory.add_message(sender_id, "user", message_text)
+                    memory.add_message(sender_id, "model", sac_msg)
                     await send_dm(sender_id, sac_msg)
                     continue
 
@@ -423,7 +476,7 @@ async def api_health():
     """Healthcheck completo dos serviços e portais."""
     return JSONResponse(content={
         "bot_status": "online",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "monitored_sites": SITE_HEALTH,
         "timestamp": datetime.now(timezone.utc).isoformat()
     })

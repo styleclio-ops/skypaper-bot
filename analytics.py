@@ -58,6 +58,18 @@ def init_db():
             );
             """)
 
+            # Tabela de fila de clientes aguardando retorno de site restabelecido
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS site_pending_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                site_key TEXT NOT NULL,
+                site_url TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                notified_at DATETIME NULL
+            );
+            """)
+
             conn.commit()
             logger.info("Banco de dados SQLite de Analytics e Auditoria inicializado com sucesso.")
     except Exception as e:
@@ -111,6 +123,58 @@ def record_site_health(site_name: str, site_url: str, status_code: int, is_up: b
             conn.commit()
     except Exception as e:
         logger.error(f"Erro ao registrar saúde de site: {e}")
+
+def add_pending_site_notification(user_id: str, site_key: str, site_url: str):
+    """Registra cliente para ser avisado proativamente assim que o site voltar ao ar."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            # Verifica se já existe pendência recente nas últimas 24h
+            cursor.execute("""
+                SELECT id FROM site_pending_notifications
+                WHERE user_id = ? AND site_key = ? AND notified_at IS NULL
+                AND datetime(created_at) >= datetime('now', '-1 day')
+            """, (str(user_id), site_key))
+            if not cursor.fetchone():
+                cursor.execute("""
+                    INSERT INTO site_pending_notifications (user_id, site_key, site_url)
+                    VALUES (?, ?, ?)
+                """, (str(user_id), site_key, site_url))
+                new_id = cursor.lastrowid
+                conn.commit()
+                logger.info(f"Cliente {user_id} adicionado à fila para notificação do site {site_key} (ID: {new_id}).")
+                return new_id
+    except Exception as e:
+        logger.error(f"Erro ao adicionar cliente para notificação de site: {e}")
+
+def get_pending_site_notifications(site_key: str) -> List[Dict[str, Any]]:
+    """Busca clientes pendentes de aviso para um determinado site."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, user_id, site_key, site_url, created_at
+                FROM site_pending_notifications
+                WHERE site_key = ? AND notified_at IS NULL
+            """, (site_key,))
+            return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Erro ao resgatar notificações pendentes: {e}")
+        return []
+
+def mark_site_notification_sent(notification_id: int):
+    """Marca notificação como enviada."""
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE site_pending_notifications
+                SET notified_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (notification_id,))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Erro ao marcar notificação como enviada: {e}")
 
 def get_executive_summary() -> Dict[str, Any]:
     """Compila os dados executivos para a diretoria da SkyPaper."""

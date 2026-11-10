@@ -33,7 +33,7 @@ async def send_dm(recipient_id: str, text: str) -> bool:
         logger.error(f"Exceção ao enviar DM para {recipient_id}: {e}", exc_info=True)
         return False
 
-async def send_button_menu(recipient: dict, text: str = None) -> bool:
+async def send_button_menu(recipient: dict, text: str = None, buttons: list = None) -> bool:
     """
     Envia o menu de botões clicáveis no Instagram Direct (Button Template / Generic Template).
     Compatível tanto com {"id": recipient_id} quanto com {"comment_id": comment_id}.
@@ -58,6 +58,24 @@ async def send_button_menu(recipient: dict, text: str = None) -> bool:
         "Para conseguir te atender melhor, me informe o que você é:"
     )
 
+    active_buttons = buttons or [
+        {
+            "type": "web_url",
+            "url": "https://comprarskypaper.hidrahome.com.br/",
+            "title": "Lojista"
+        },
+        {
+            "type": "web_url",
+            "url": "https://comprarskypaper.hidrahome.com.br/",
+            "title": "Representante"
+        },
+        {
+            "type": "web_url",
+            "url": "https://skypaperinc.com.br/produtos/",
+            "title": "Consumidor Final"
+        }
+    ]
+
     # Tentativa 1: Button Template (menu nativo de botões verticais idêntico ao modelo solicitado)
     button_payload = {
         "recipient": recipient,
@@ -67,23 +85,7 @@ async def send_button_menu(recipient: dict, text: str = None) -> bool:
                 "payload": {
                     "template_type": "button",
                     "text": menu_text,
-                    "buttons": [
-                        {
-                            "type": "web_url",
-                            "url": "https://comprarskypaper.hidrahome.com.br/",
-                            "title": "Lojista"
-                        },
-                        {
-                            "type": "web_url",
-                            "url": "https://comprarskypaper.hidrahome.com.br/",
-                            "title": "Representante"
-                        },
-                        {
-                            "type": "web_url",
-                            "url": "https://skypaperinc.com.br/produtos/",
-                            "title": "Consumidor Final"
-                        }
-                    ]
+                    "buttons": active_buttons[:3]
                 }
             }
         }
@@ -110,23 +112,7 @@ async def send_button_menu(recipient: dict, text: str = None) -> bool:
                                 {
                                     "title": "SkyPaper | Atendimento 📒✨",
                                     "subtitle": menu_text[:80],
-                                    "buttons": [
-                                        {
-                                            "type": "web_url",
-                                            "url": "https://comprarskypaper.hidrahome.com.br/",
-                                            "title": "Lojista"
-                                        },
-                                        {
-                                            "type": "web_url",
-                                            "url": "https://comprarskypaper.hidrahome.com.br/",
-                                            "title": "Representante"
-                                        },
-                                        {
-                                            "type": "web_url",
-                                            "url": "https://skypaperinc.com.br/produtos/",
-                                            "title": "Consumidor Final"
-                                        }
-                                    ]
+                                    "buttons": active_buttons[:3]
                                 }
                             ]
                         }
@@ -141,12 +127,8 @@ async def send_button_menu(recipient: dict, text: str = None) -> bool:
                 logger.warning(f"Generic Template falhou ({resp_gen.status_code}): {resp_gen.text}. Enviando fallback em texto...")
 
             # Tentativa 3: Fallback em texto seguro caso o cliente do usuário não suporte templates
-            fallback_text = (
-                f"{menu_text}\n\n"
-                "👉 Lojista: https://comprarskypaper.hidrahome.com.br/\n"
-                "👉 Representante: https://comprarskypaper.hidrahome.com.br/\n"
-                "👉 Consumidor Final: https://skypaperinc.com.br/produtos/"
-            )
+            btn_lines = "\n".join([f"👉 {b.get('title')}: {b.get('url', '')}" for b in active_buttons if b.get('url')])
+            fallback_text = f"{menu_text}\n\n{btn_lines}" if btn_lines else menu_text
             resp_txt = await client.post(url, json={"recipient": recipient, "message": {"text": fallback_text}}, headers=headers)
             return resp_txt.status_code == 200
 

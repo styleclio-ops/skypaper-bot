@@ -113,6 +113,21 @@ def analyze_text(text: str) -> Dict[str, Any]:
         "products": detected_products
     }
 
+NO_INVOICE_KEYWORDS = [
+    "não tenho nota", "nao tenho nota", "sem nota", "perdi a nota", "perdi a nf",
+    "não tenho nf", "nao tenho nf", "sem nf", "foi presente", "ganhei de presente",
+    "comprei sem nota", "não acho a nota", "nao acho a nota", "não tenho a nota", "nao tenho a nota"
+]
+
+def is_no_invoice_mention(text: str) -> bool:
+    """Verifica se o cliente mencionou que não possui nota fiscal."""
+    clean = (text or "").lower().strip()
+    return any(kw in clean for kw in NO_INVOICE_KEYWORDS)
+
+def get_no_invoice_reply() -> str:
+    """Resposta quando o cliente relata não possuir a nota fiscal."""
+    return "Sem problemas! Envie o e-mail para sac@skypaperinc.com.br mesmo assim, para que o SAC siga com o atendimento."
+
 def get_sac_comment_reply() -> str:
     """Resposta pública empática para comentários com reclamações ou problemas."""
     return (
@@ -121,12 +136,18 @@ def get_sac_comment_reply() -> str:
     )
 
 def get_sac_dm_response() -> str:
-    """Resposta privada no Direct para casos de SAC com prioridade."""
+    """Resposta privada no Direct para casos de SAC com prioridade (frase oficial SkyPaper)."""
     return (
-        "Olá! Sentimos muito por qualquer transtorno. Na SkyPaper, prezamos pela máxima qualidade "
-        "dos nossos produtos e pelo carinho com cada cliente! 🕊️✨\n\n"
-        "Para que nossa equipe de suporte analise seu caso com prioridade máxima e resolva rapidamente:\n"
-        "📧 E-mail: sac@skypaperinc.com.br\n"
-        "💬 WhatsApp Oficial: (11) 97825-7833\n\n"
-        "Por favor, nos informe por aqui o número do seu pedido ou foto do produto que já daremos andamento no seu atendimento!"
+        "Infelizmente essa não é a experiência que gostaríamos que tivesse, "
+        "peço que entre em contato conosco através do nosso email: sac@skypaperinc.com.br "
+        "enviando a foto do produto e da nota fiscal."
+    )
+
+def get_contingency_dm_response(issue_type: str = "geral") -> str:
+    """Resposta de contingência quando o site está indisponível (sem WhatsApp, com promessa de retorno)."""
+    return (
+        "Pedimos desculpas pela instabilidade no momento! 🙏 Nossa equipe técnica já está cuidando "
+        "disso para restabelecer o acesso o quanto antes.\n\n"
+        "Assim que o site for restabelecido, eu mesmo retorno e te aviso por aqui no direct! 🌸🕊️\n\n"
+        "Se tiver qualquer dúvida urgente, nosso e-mail oficial é sac@skypaperinc.com.br."
     )
